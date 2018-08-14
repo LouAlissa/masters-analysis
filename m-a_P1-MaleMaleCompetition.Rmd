@@ -1,0 +1,469 @@
+---
+title: "R Notebook - Meta-analysis by Louise M. Alissa (Male Competition)"
+output:
+  html_notebook:
+    highlight: tango
+    theme: flatly
+  html_document: default
+---  
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. This is a easy way to organize notes, comments and the analysis *per si*. Besides that, this tool can improve trasparency in analitical methods. In this RNotebook I am trying to understand how the limitation of reproductive sites affect male competition.  
+
+***
+
+**ALISSA, L.M. Effect of reproductive site limitation on the intensity of sexual selection and the quality of paternal care: a meta-analysis. 2018. Dissertação (Mestrado) - Instituto de Biociências, Universidade de São Paulo, SP.**  
+
+The availability of reproductive sites is a major factor shaping the behavior of males and females in species with resource-based mating systems. Using a meta-analytic approach, we tested five predictions directly or indirectly derived from the mating system theory. We expected that reproductive site limitation would lead to: (1) intense male-male competition for resource possession; (2) high variance in male reproductive success, generating high values of opportunity for sexual selection; (3) high intensity of selection on male traits related to resource possession; (4) high sperm competition risk; and (5) low quality of paternal care. We compiled information from observational and experimental studies that compared the reproductive behavior of individuals of the same species under low and high reproductive site limitation. We found that, when reproductive sites are limited, there is a slight increase in male-male competition, with higher rates of nest takeover and agonistic interactions, and a slight increase in the selection gradient on male traits, with successful males tending to be larger than unsuccessful males. Reproductive site limitation has no consistent effect on the opportunity for sexual selection and on the sperm competition risk. However, territorial males invest more in gonads and lose less paternity when reproductive sites are limited. There is also no clear effect of reproductive site limitation on the quality of paternal care, but few studies have addressed this subject. Taken together, our findings indicate that predictions on how reproductive site limitation affects several aspects of resource-based mating systems have weak empirical support. These predictions do not consider the plasticity in the mating tactics of males and females, which make them too simplistic. Moreover, since the original proposition of the mating system theory, our understanding of sperm competition increased a lot. We now know that accurate predictions on the intensity and direction of sexual selection should take into account both pre- and post-copulatory processes. Finally, the interplay between sexual selection and parental care is complex, and the original framework of mating system theory does not provide sufficient elements to derive clear and taxonomically broad predictions.   
+
+
+Louise Alissa de Morais  
+
+e-mail: louisem.alissa@gmail.com 
+
+***
+
+# Organizing
+
+##  Loading libraries, setting working directory and loading data set
+
+### Setting the work directory
+```{r}
+setwd("C:/Users/louis/Dropbox/Masters_analyses-LMAlissa")  
+```
+### Opening packages
+```{r, message=FALSE, warning=FALSE}
+library(metafor)
+library(ggplot2)
+library(phytools)
+library(geiger)
+library(picante)
+library(MuMIn)
+library(car)
+library(ape)
+library(Hmisc)
+library(miscTools)
+library(bbmle)
+```
+### Cleanning possible masking objects
+```{r}
+rm(list=ls())
+```
+### Opening the .csv file
+```{r}
+dataset1 <- read.csv(file="basic_dataset1.csv", header=T, dec=".", sep=";")
+```
+### Looking to data structure
+```{r}
+head(dataset1)
+tail(dataset1)
+str(dataset1)
+```
+### Setting the rigth classes for variables
+```{r}
+dataset1$nID <- as.factor(dataset1$nID)
+dataset1$publication_year <- as.factor(dataset1$publication_year)
+
+str(dataset1)
+```
+
+
+## Loanding and dealing with the phylogeny
+
+### First, opening the file .tree (newik). The tree was constructed on Mesquite.
+```{r}
+tree1 <- read.tree('mytree1_mod.tre')
+plot(tree1)
+```
+### Calculating the correlation matrix, with weighted values for relatedness
+```{r}
+tree1_mod <- compute.brlen(tree1, method="Grafen")
+cor <- vcv(tree1_mod, corr =T)
+```
+### Cheking if every specie in the data is present in the tree
+```{r}
+spp <- data.frame(spp = unique(dataset1$phylo))
+row.names(spp) <- spp$spp
+```
+
+```{r}
+check.phylo <- name.check(tree1_mod, spp)
+check.phylo
+```
+
+ 
+## Transforming r in Fisher's Z
+
+In our table we have values of r, here we transform to Z
+```{r, message=FALSE, warning=FALSE}
+dataset1 <- escalc(measure="ZCOR", ri=r, ni=N, data=dataset1, append=TRUE)
+
+attach(dataset1) # Just attaching each collumn
+```
+
+
+***
+
+# Selecting the random-effects based on AICc
+
+Randon variables: the effect size identity (id.mc), the article identity(nID), species (species) and the phylogenetic effect (phylo). Without moderators here.
+
+### Creating an object for list each effect size
+```{r}
+id.mc <- as.factor(1:(length(dataset1$r)))
+```
+### Constructing models
+```{r}
+# id |--> AICc = 94.8374
+m_randon1 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc), data=dataset1, method="ML")
+summary(m_randon1)
+```
+
+```{r}
+# id + phylo |--> AICc = 97.0980
+m_randon2 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|phylo),R=list(phylo=cor), data=dataset1, method="ML")
+summary(m_randon2)
+```
+
+```{r}
+# id + species |--> AICc = 97.0980
+m_randon3 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|species), data=dataset1, method="ML")
+summary(m_randon3)
+```
+
+```{r}
+# id + nID |--> AICc = 97.0980
+m_randon4 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID), data=dataset1, method="ML")
+summary(m_randon4)
+```
+
+```{r}
+# id + specie + phylo |--> AICc = 99.4569
+m_randon5 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|species, ~1|phylo), R=list(phylo=cor), data=dataset1, method="ML")
+summary(m_randon5)
+```
+
+```{r}
+# id + nID + specie |--> AICc = 99.4569
+m_randon6 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID, ~1|species), data=dataset1, method="ML")
+summary(m_randon6)
+```
+
+```{r}
+# id + nID + phylo |--> AICc = 99.4569
+m_randon7 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID, ~1|phylo),R=list(phylo=cor), data=dataset1, method="ML")
+summary(m_randon7)
+```
+
+```{r}
+# id + nID + specie + phylo |--> AICc = 101.9207
+m_randon8 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID, ~1|species, ~1|phylo), R=list(phylo=cor), data=dataset1, method="ML")
+summary(m_randon8)
+```
+
+###Creating a table to compare models, looking for AICc
+```{r}
+ICtab(m_randon1, m_randon2, m_randon3, m_randon4, m_randon5, m_randon7, m_randon8, type= "AICc")
+```
+
+
+***
+
+# Performing - data set 1 - MALE-MALE COMPETITION
+
+## The meta-analytic model 
+
+Randon variables included: the effect size identity (id.mc), the article identity(nID), species (species) and the phylogenetic effect (phylo). Without moderators here.
+```{r}
+meta.mc.phylo <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID, ~1|species, ~1|phylo), R=list(phylo=cor) , data=dataset1, method="REML")
+```
+### Looking the results 
+```{r}
+summary(meta.mc.phylo)
+```
+### Overall effect and CI converted back to "r"
+```{r}
+predict(meta.mc.phylo, transf=transf.ztor)
+```
+### Basic forest plot (made with metafor package)
+```{r}
+forest(meta.mc.phylo, cex=.6, xlab="Fisher's Z")
+```
+
+
+## Heterogeinity
+*Based in Nakagawa & Santos (2012)*
+```{r}
+s2m.mc <- sum(1/meta.mc.phylo$vi) * (meta.mc.phylo$k-1) / (sum(1/meta.mc.phylo$vi)^2 - sum((1/meta.mc.phylo$vi)^2))
+s2m.mc #s^2_m variation within study 
+```
+
+```{r}
+s2t.mc <- sum(meta.mc.phylo$sigma2) + s2m.mc 
+s2t.mc #s^2_t variation total
+```
+### The total amount of variance
+```{r}
+total_I2.mc <- sum(meta.mc.phylo$sigma2)/s2t.mc 
+total_I2.mc*100 # the "total" variation
+```
+### Proportion of variance from effect size id
+```{r}
+id.mc_I2 <- meta.mc.phylo$sigma2[1]/s2t.mc
+id.mc_I2*100
+```
+### Proportion of variance from study id
+```{r}
+nID_I2 <- meta.mc.phylo$sigma2[2]/s2t.mc
+nID_I2*100
+```
+### Proportion of variance from species id
+```{r}
+especies_I2 <- meta.mc.phylo$sigma2[3]/s2t.mc
+especies_I2*100
+```
+### Proportion of variance from phylo 
+```{r}
+phylo_I2 <- meta.mc.phylo$sigma2[4]/s2t.mc
+phylo_I2*100
+```
+
+***
+
+## The phylogenetic effect
+Very low, in this case.
+```{r}
+H2.mc<-meta.mc.phylo$sigma2[4] / sum(meta.mc.phylo$sigma2)
+H2.mc*100
+```
+
+***
+
+## Qb
+Testing if the mean effect is different in different taxa.
+```{r}
+mean_taxon <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID, ~1|species, ~1|phylo), R=list(phylo=cor) , data=dataset1, method="REML", mod= ~ taxon-1)
+summary(mean_taxon)
+```
+
+***
+
+# Testing publication bias 
+
+## Egger's regression
+
+### Radial figure
+```{r}
+# Egger's figure
+radial.rma(meta.mc.phylo)
+```
+### Egger's regression test 
+Non significant
+```{r}
+s.e.mc <- sqrt(dataset1$vi)
+precision.mc <- 1/s.e.mc
+
+Egger.mc <- lm(dataset1$yi*precision.mc ~ precision.mc)
+summary(Egger.mc)
+```
+
+## Funnel Plot 
+```{r}
+# Basic funnel plot
+funnel(meta.mc.phylo)
+```
+
+
+```{r}
+#plot 1 ("plot")
+plot(dataset1$yi, 
+precision.mc, 
+xlab="Fisher's Z", 
+ylab="precision (1/s.e.)", 
+cex=1.5, 
+xlim=c(min(dataset1$yi, na.rm=T)-0.5,max(dataset1$yi, na.rm=T)+0.5), 
+ylim=c(0,max(precision.mc, na.rm=T)*1.2))
+abline(v=meta.mc.phylo[1], lwd=3)
+abline(v=0, col=8, lwd=3, lty="dotted")
+```
+
+```{r}
+#plot 2 ("ggplot")
+dataset1$precision.mc <-precision.mc
+
+funnel_1 <- ggplot(dataset1, aes(x=yi, y=precision.mc)) + 
+geom_point(size=4, colour="gray30") +
+scale_shape(solid=FALSE) +
+xlab(expression("Fisher's "*italic(Z))) +
+ylab("precision (1/s.e.)") +
+theme_classic(base_size = 23)+
+geom_vline(xintercept=0, size=1.1, colour="gray", linetype = 1)+
+geom_vline(xintercept=0.1663, size=1.1, linetype = 1)+
+theme(axis.title.x=element_text(vjust=-0.1))+
+theme(axis.title.y=element_text(vjust=1.2))
+```
+
+```{r}
+funnel_1
+```
+
+
+***
+
+# Moderators
+
+## Type of methodological approach
+Testing if differences between study methods (obs, exp_lab, exp_field) explain variance in data
+```{r}
+meta.mc_mod1 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID, ~1|species, ~1|phylo), R=list(phylo=cor) , data=dataset1, method="REML", mod= ~ study_type-1)
+summary(meta.mc_mod1)
+```
+
+```{r}
+plot(dataset1$study_type, dataset1$yi, las = 1, bty = "l", cex = 2, pch=21, bg=16)
+```
+```{r}
+table(dataset1$study_type)
+```
+
+
+## Type of mating system
+Testing if differences between monogamy and polygamy mating systems explain variance in data
+```{r}
+# mating_system/social_bond 
+meta.mc_mod22 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID, ~1|species, ~1|phylo), R=list(phylo=cor) , data=dataset1, method="REML", mod= ~ mating_system-1)
+summary(meta.mc_mod22)
+```
+
+```{r}
+plot(dataset1$mating_system, dataset1$yi, las = 1, bty = "l", cex = 2, pch=21, bg=16)
+```
+
+```{r}
+table(dataset1$mating_system)
+```
+
+
+## Type of parental care
+Testing if differences between parental care type (maternal, paternal, biparental, no_care) explain variance in data
+```{r}
+meta.mc_mod3 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID, ~1|species, ~1|phylo), R=list(phylo=cor) , data=dataset1, method="REML", mod= ~ care-1)
+summary(meta.mc_mod3)
+```
+
+```{r}
+plot(dataset1$care, dataset1$yi, las = 1, bty = "l", cex = 2, pch=21, bg=16)
+```
+
+```{r}
+table(dataset1$care)
+```
+
+## Type of competition
+Testing if there is difference between direct(agonistic behaviour) and indirect (rate of use, occupation, etc) competition for resorces explain part of variance
+```{r}
+# pred
+meta.mc_mod4 <- rma.mv(yi=yi, V=vi, random = list(~ 1|id.mc, ~1|nID, ~1|species, ~1|phylo), R=list(phylo=cor) , data=dataset1, method="REML", mod= ~ pred-1)
+summary(meta.mc_mod4)
+```
+
+```{r}
+plot(dataset1$pred, dataset1$yi, las = 1, bty = "l", cex = 2, pch=21, bg=16)
+```
+
+```{r}
+table(dataset1$pred)
+```
+
+***
+
+# Making a better forest plot
+
+First, creating a new data frame, with colunms with the confidence interval
+```{r, include=FALSE}
+
+df1 <- cbind(data.frame(dataset1),
+             data.frame(CILB=meta.mc.phylo$yi - 2*sqrt(meta.mc.phylo$vi),
+                        CIUB=meta.mc.phylo$yi + 2*sqrt(meta.mc.phylo$vi))
+              )
+
+```
+
+```{r, include=FALSE}
+mean.effect <- c("Mean effect size", rep("NA",18), meta.mc.phylo$b, rep("NA",2), meta.mc.phylo$ci.lb, meta.mc.phylo$ci.ub)
+
+mean.effect
+```
+
+```{r}
+
+mean.effect <- as.data.frame(matrix(t(mean.effect),nrow=1),stringsAsFactors=FALSE)
+
+class(mean.effect)
+```
+
+```{r, include=FALSE}
+df1 <- as.matrix(df1)
+
+mean.effect <- as.matrix(mean.effect)
+
+df1.1 <- insertRow(df1,52, mean.effect)
+
+df1.1
+
+df1.1 <-as.data.frame(df1.1)
+
+df1.1
+```
+
+```{r}
+df1.1$yi <- as.character(df1.1$yi)
+df1.1$CILB <- as.character(df1.1$CILB)
+df1.1$CIUB <- as.character(df1.1$CIUB)
+
+```
+
+```{r}
+
+df1.1$yi <- as.numeric(df1.1$yi)
+df1.1$CILB <- as.numeric(df1.1$CILB)
+df1.1$CIUB <- as.numeric(df1.1$CIUB)
+
+```
+
+
+```{r}
+highlight <- subset(df1.1, ES=="Mean effect size")
+```
+
+
+
+Now, creating the plot
+```{r}
+myplot_1 <- ggplot(df1.1, aes(x=ES)) +
+  geom_hline(aes(yintercept=0), linetype="dashed", color="gray", lwd=1) +
+  geom_linerange(aes(x=ES, ymin=CILB, ymax=CIUB),col="gray50", lwd=1, alpha=0.7) +
+  geom_linerange(aes(x=ES, ymin=CILB, ymax=CIUB), data=highlight, colour="black") +
+  geom_point(aes(y=yi, size=yi), shape = 21, fill="gray50", col="gray50") +
+  geom_point(aes(y=yi, size=yi), data=highlight, colour="black") +
+  scale_size_continuous(range = c(1,5), name="Effect size Zr") +
+  scale_x_discrete(limits = rev(levels(df1.1$ES)))+
+  ylab(expression(Effect~Size~italic(Zr)))+
+  xlab("")+
+  theme_bw()+
+  coord_flip()+
+  guides(fill= guide_legend(override.aes = list(size=5)),
+         size = guide_legend(override.aes = list(fill = "gray40")))+
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=10),
+        axis.line = element_line(colour = "black"),
+        legend.position = "none")  
+
+```
+
+```{r}
+myplot_1
+```
+
